@@ -1,6 +1,6 @@
 (ns kami.ongaku.plugin-host-test
   (:require [clojure.test :refer [deftest testing is]]
-            [comfyui.workflow :as workflow]
+            [kami.ongaku.plugin-host.graph :as workflow]
             [kami.ongaku.plugin-host :as ph]))
 
 ;; -----------------------------------------------------------------

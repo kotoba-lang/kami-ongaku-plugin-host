@@ -1,8 +1,5 @@
 {:paths ["src"]
- :deps {io.github.kotoba-lang/comfyui
-        {:git/url "https://github.com/kotoba-lang/comfyui"
-         :git/sha "6fa4438ba998e7d04d93f7f07c24c0b275e96cf9"
-         :deps/root "."}}
+ :deps {}
  :aliases
  {:test {:extra-paths ["test"]
          :extra-deps {io.github.cognitect-labs/test-runner
