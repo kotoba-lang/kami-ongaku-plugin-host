@@ -80,9 +80,120 @@ compositing.
 
 - No audio rendering / no plugin execution (node `:fn`s raise on call —
   needs a sample-buffer host capability, a later wave/host's job).
+  `test/e2e/` (below) adds a real-browser *proof* that `compute-pdc`'s
+  output does genuine work when fed into a real delay DSP, but it is a
+  narrow test harness, not this repo taking on plugin-execution
+  responsibility — the graph's node `:fn`s still raise, unchanged.
 - No VST3/AU binary plugin loading — this hosts the *contract shape*,
   not real third-party plugin binaries.
 - `:curve` automation interpolation is linear (documented simplification).
+
+## Real-audio PDC proof (`test/e2e/`)
+
+**This is a test/proof harness, not a production render pipeline.** Every
+existing test in `test/kami/ongaku/plugin_host_test.cljc` (including
+`compute-pdc`'s own tests) checks the PDC math against hand-picked
+synthetic latency integers — never real audio. This E2E closes that
+specific gap: it proves `compute-pdc`'s compensation number, fed back
+through a real delay DSP, actually keeps two real audio signals
+time-aligned — not just that the arithmetic is correct on paper.
+
+It builds directly on `kotoba-lang/org-w3-webaudio`'s own real-browser
+AudioWorklet DSP E2E proof (`org-w3-webaudio` `test/e2e/`, commit
+`e554d853d640`) — same recipe (`:optimizations advanced` +
+`self-polyfill.js`, both required to load a Closure-compiled bundle inside
+`AudioWorkletGlobalScope`; see that repo's README for the full derivation,
+not repeated here), same nbb+Playwright harness, same local HTTP server
+(`audioWorklet` needs a secure context; `about:blank`/`file:` don't expose
+it), same real headless Chromium.
+
+**Scenario:** two parallel signal paths both receive the same impulse
+trigger at the same nominal start time. Path A's plugin chain is one
+instance (a look-ahead-limiter stand-in, built with this repo's own
+`plugin-descriptor`/`plugin-instance`) reporting 200 samples of real
+latency; path B's chain is empty (0 latency). This repo's own
+`compute-pdc` — called for real, not hand-simulated — says path A needs 0
+extra compensation (it's already the slowest path) and path B needs +200
+samples to stay aligned at the mix point. Both paths' actual delay is
+then realized via `kotoba-lang/audio`'s own `audio.effects/delay-line`
+(feedback `0.0`, wet-dry `1.0` → an exact N-sample pure delay, per that
+function's own docstring): 200 samples for path A always, and either 0
+(uncompensated) or `compute-pdc`'s own computed 200 (compensated) for path
+B.
+
+`test/e2e/src/kami/ongaku/plugin_host/e2e/pdc_dsp.cljs` (worklet-side
+bundle) requires this repo's own `kami.ongaku.plugin-host` (`compute-pdc`,
+`plugin-descriptor`, `plugin-instance`) and `kotoba-lang/audio`'s own
+`audio.effects` directly — not reimplementations — and exports a
+`render-scenario` entrypoint that a hand-written `AudioWorkletProcessor`
+subclass (`test/e2e/page/worklet-processor-tail.js`, real ES6
+`class ... extends`, native `super()` — extending a native built-in from
+cljs isn't a solved idiom, same reasoning org-w3-webaudio's tail gives)
+calls once in its constructor, streaming all three rendered channels
+(pathA / pathB-uncompensated / pathB-compensated) out through the
+realtime `process()` quantum callback. A main-thread bundle
+(`test/e2e/src/kami/ongaku/plugin_host/e2e/main_driver.cljs`) uses
+`org-w3-webaudio`'s own binding layer (`new-offline-audio-context!` with 3
+channels, `add-worklet-module!`, `create-worklet-node!`, `connect!`,
+`start-rendering!`) to load the worklet module into a real headless
+Chromium and capture the actual rendered 3-channel PCM.
+
+`test/e2e/run_e2e.cljs` (nbb) independently recomputes the identical
+scenario (same `compute-pdc` + `audio.effects/delay-line` source, no
+browser involved) as ground truth, diffs it against the browser-captured
+PCM, and then — the actual proof — measures the real sample offset
+between path A and path B *on the captured PCM itself*, both by
+peak-position comparison (exact for a clean impulse response) and by
+discrete cross-correlation (the general technique, included so this isn't
+just "read off the one impulse sample" — both must agree), before and
+after compensation.
+
+Real measured result (Chromium, Playwright-bundled, run 2026-07-13):
+
+```
+=== kami-ongaku-plugin-host real-audio PDC proof result ===
+compute-pdc (real kami.ongaku.plugin-host/compute-pdc, not synthetic-only):
+  path-a: latency= 200 compensation= 0
+  path-b: latency= 0 compensation= 200
+captured length: 1024 reference length: 1024
+max abs diff vs independent offline reference -- pathA: 0 pathB-uncompensated: 0 pathB-compensated: 0 tolerance: 0.000001
+--- measured sample offset (path A vs path B) on REAL captured PCM ---
+BEFORE compensation -- peak-position: 200 cross-correlation: 200 (expected ~ 200 )
+AFTER  compensation -- peak-position: 0 cross-correlation: 0 (expected ~0)
+PASS: true
+```
+
+Before PDC is applied, path A's real DSP output measurably arrives 200
+samples later than path B's, on real captured PCM — both measurement
+methods agree exactly. After applying `compute-pdc`'s own computed
+compensation (200 samples) to path B through the same real delay-line
+DSP, the measured offset collapses to exactly 0 — again, both methods
+agree. This is the real proof: **PDC's output is not just a number that
+happens to equal a latency figure — routed back through the same
+production DSP path, it genuinely eliminates a real, measurable
+misalignment.**
+
+Setup and run:
+
+```bash
+bash scripts/build-e2e-bundles.sh          # compiles both bundles with
+                                            # :optimizations advanced (JVM
+                                            # Clojure CLI build step, not an
+                                            # app-runtime choice)
+npm --prefix test/e2e install              # Playwright
+npx --prefix test/e2e playwright install chromium
+AUDIO_SRC_PATH=/path/to/kotoba-lang/audio/src
+nbb -cp "src:$AUDIO_SRC_PATH" test/e2e/run_e2e.cljs
+```
+
+Exits 0 and prints the PDC numbers, the offline cross-verification diffs,
+and both offset measurements on pass; exits 1 on any real failure (browser
+setup error, browser-vs-offline mismatch beyond tolerance, offset not
+collapsing after compensation) — no silent degradation. The `:e2e`
+deps.edn alias takes `kotoba-lang/audio` and `kotoba-lang/org-w3-webaudio`
+as real git dependencies (pinned by commit SHA); `test/e2e/page/*-bundle.js`,
+`test/e2e/page/worklet-processor.js`, and `test/e2e/node_modules/` are
+build artifacts, gitignored.
 
 ## Test
 

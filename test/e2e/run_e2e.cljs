@@ -1,0 +1,244 @@
+(ns run-e2e
+  "Real-audio proof that kami-ongaku-plugin-host's PDC (plugin delay
+   compensation, kami.ongaku.plugin-host/compute-pdc) does genuine,
+   measurable work -- not just a formula on synthetic numbers (every
+   existing test in test/kami/ongaku/plugin_host_test.cljc checks compute-pdc
+   against hand-picked latency integers only, never real audio).
+
+   Scenario: two parallel signal paths both receive the same impulse
+   trigger at the same nominal start time. Path A's 'plugin chain' is a
+   single instance (a look-ahead-limiter stand-in) reporting
+   PATH-A-LATENCY samples of real latency; path B's chain is empty (0
+   latency). Both paths' actual delay is realized via
+   kotoba-lang/audio's own audio.effects/delay-line (feedback 0.0, wet-dry
+   1.0 -> exact N-sample pure delay per that fn's own docstring) --
+   PATH-A-LATENCY samples for path A always, and this repo's own
+   compute-pdc's :path/compensation-samples for path B, either 0
+   (uncompensated) or the real computed value (compensated).
+
+   This renders inside a real AudioWorkletProcessor in headless Chromium
+   via kotoba-lang/org-w3-webaudio's proven binding layer (that repo's own
+   README documents the :optimizations advanced + self-polyfill recipe this
+   harness follows, scripts/build-e2e-bundles.sh here does not re-derive
+   it), captures the actual rendered PCM for all three signals, and:
+
+     1. cross-verifies the captured PCM against an INDEPENDENT offline
+        recomputation of the identical scenario (this file, no browser
+        involved, using the same audio.effects/delay-line +
+        kami.ongaku.plugin-host/compute-pdc source directly);
+     2. measures the REAL sample offset between path A and path B on the
+        captured PCM -- both by peak-position comparison (exact for a
+        clean impulse) and by discrete cross-correlation (the general
+        technique, which must agree) -- BEFORE compensation (expected:
+        ~PATH-A-LATENCY samples, a real measurable misalignment) and AFTER
+        compensation (expected: ~0, i.e. compute-pdc's own number, fed back
+        through the real DSP, actually collapses the misalignment).
+
+   Requires: `bash scripts/build-e2e-bundles.sh` run first, and
+   `npm install` inside test/e2e/ for the Playwright dependency.
+
+   Run from the repo root (needs -cp pointing at this repo's own src plus a
+   checkout of kotoba-lang/audio for the offline reference computation):
+     nbb -cp \"src:$AUDIO_SRC_PATH\" test/e2e/run_e2e.cljs"
+  (:require ["playwright" :refer [chromium]]
+            ["http" :as http]
+            ["fs" :as fs]
+            ["path" :as path]
+            [audio.effects :as effects]
+            [kami.ongaku.plugin-host :as ph]))
+
+(def site-dir (path/join (js/process.cwd) "test" "e2e" "page"))
+(def port 8943)
+
+(def content-types
+  {".html" "text/html" ".js" "application/javascript"})
+
+(defn start-server []
+  (js/Promise.
+    (fn [resolve _reject]
+      (let [server (http/createServer
+                     (fn [req res]
+                       (let [url (if (= (.-url req) "/") "/index.html" (.-url req))
+                             fpath (path/join site-dir url)
+                             ext (path/extname fpath)
+                             ctype (get content-types ext "application/octet-stream")]
+                         (if (fs/existsSync fpath)
+                           (do (.writeHead res 200 #js {"Content-Type" ctype})
+                               (.end res (fs/readFileSync fpath)))
+                           (do (.writeHead res 404) (.end res "not found"))))))]
+        (.listen server port (fn [] (resolve server)))))))
+
+;; --- scenario parameters, shared between the offline reference and the
+;;     browser-side worklet render ---------------------------------------
+(def SR 48000)
+(def N 1024)
+(def IMPULSE-IDX 50)
+(def PATH-A-LATENCY 200)
+
+(defn impulse
+  "-> vector of n doubles, all 0.0 except a single 1.0 at idx."
+  [n idx]
+  (vec (map #(if (= % idx) 1.0 0.0) (range n))))
+
+(defn offline-pdc
+  "-> the REAL kami.ongaku.plugin-host/compute-pdc result for this scenario
+   (this repo's own algorithm, run directly, not through a browser) -- the
+   ground truth both for reporting the PDC numbers and for the
+   compensation-samples applied to path B below."
+  []
+  (let [limiter (ph/plugin-descriptor
+                 {:id "lookahead-limiter" :name "Look-ahead Limiter" :vendor "kami"
+                  :category :effect :latency-samples PATH-A-LATENCY
+                  :params [(ph/plugin-param {:key :ceiling :label "Ceiling"
+                                              :min -12 :max 0 :default 0 :unit :db})]})
+        path-a-chain [(ph/plugin-instance limiter {:id "lim1"})]
+        path-b-chain []]
+    (ph/compute-pdc {:path-a path-a-chain :path-b path-b-chain})))
+
+(defn offline-reference
+  "-> {:path-a [...] :path-b-uncompensated [...] :path-b-compensated [...]},
+   the exact same computation as
+   kami.ongaku.plugin-host.e2e.pdc-dsp/render-scenario, run here directly
+   via audio.effects/delay-line + `pdc` (this repo's own compute-pdc, not a
+   reimplementation) -- the independent ground truth the browser-captured
+   PCM is checked against."
+  [pdc]
+  (let [stimulus (impulse N IMPULSE-IDX)
+        path-b-comp (get-in pdc [:path-b :path/compensation-samples])
+        path-a (effects/delay-line stimulus {:delay-samples PATH-A-LATENCY
+                                              :feedback 0.0 :wet-dry 1.0})
+        path-b-uncompensated stimulus
+        path-b-compensated (if (pos? path-b-comp)
+                             (effects/delay-line stimulus {:delay-samples path-b-comp
+                                                            :feedback 0.0 :wet-dry 1.0})
+                             stimulus)]
+    {:path-a path-a
+     :path-b-uncompensated path-b-uncompensated
+     :path-b-compensated path-b-compensated}))
+
+(defn max-abs-diff [a b]
+  (reduce max 0.0 (map (fn [x y] (Math/abs (- x y))) a b)))
+
+(defn peak-idx
+  "-> index of the largest-magnitude sample -- exact for a clean impulse
+   response (direct sample-position comparison)."
+  [xs]
+  (first (apply max-key (fn [[_ v]] (Math/abs v)) (map-indexed vector xs))))
+
+(defn shifted-correlation
+  "sum_i x[i] * y[i - lag] over i in [0, n), treating out-of-range y as 0 --
+   the correlation of x against y delayed by `lag` samples."
+  [x y lag n]
+  (reduce + 0.0
+          (map (fn [i]
+                 (let [j (- i lag)]
+                   (if (and (>= j 0) (< j n)) (* (nth x i) (nth y j)) 0.0)))
+               (range n))))
+
+(defn best-lag
+  "Integer lag in [-max-lag, max-lag] maximizing (shifted-correlation x y
+   lag n) -- the lag L such that delaying y by L samples best matches x.
+   Standard discrete cross-correlation (works for any stimulus shape, not
+   just an impulse -- included alongside peak-idx per the task's 'confirm
+   via cross-correlation or direct sample-position comparison')."
+  [x y max-lag n]
+  (apply max-key (fn [lag] (shifted-correlation x y lag n)) (range (- max-lag) (inc max-lag))))
+
+(defn run-in-page [page]
+  ;; pageFunction is a plain JS source string (not a cljs/nbb-compiled fn
+  ;; value), same reason and same workaround org-w3-webaudio's run_e2e.cljs
+  ;; documents: Playwright's page.evaluate(<string>, arg) silently drops
+  ;; `arg` for a source-string pageFunction (confirmed there with plain
+  ;; Node + Playwright, not an nbb/cljs bug) -- params are inlined as a JSON
+  ;; literal into the expression string instead.
+  (.evaluate page
+    (str "window.runE2E("
+         (js/JSON.stringify
+           #js {:n N :impulseIdx IMPULSE-IDX :pathALatency PATH-A-LATENCY :sr SR
+                :workletUrl "/worklet-processor.js"
+                :processorName "kami-pdc-proof-processor"})
+         ")")))
+
+(defn report-and-exit [server browser reference pdc result]
+  (let [captured-a (vec (.-pathA result))
+        captured-b-unc (vec (.-pathBUncompensated result))
+        captured-b-comp (vec (.-pathBCompensated result))
+        ref-a (:path-a reference)
+        ref-b-unc (:path-b-uncompensated reference)
+        ref-b-comp (:path-b-compensated reference)
+        n (count captured-a)
+        diff-a (max-abs-diff captured-a ref-a)
+        diff-b-unc (max-abs-diff captured-b-unc ref-b-unc)
+        diff-b-comp (max-abs-diff captured-b-comp ref-b-comp)
+        tol 1e-6
+        offset-before-peak (- (peak-idx captured-a) (peak-idx captured-b-unc))
+        offset-after-peak (- (peak-idx captured-a) (peak-idx captured-b-comp))
+        max-lag 400
+        offset-before-xcorr (best-lag captured-a captured-b-unc max-lag n)
+        offset-after-xcorr (best-lag captured-a captured-b-comp max-lag n)
+        path-a-latency (get-in pdc [:path-a :path/latency-samples])
+        path-a-comp (get-in pdc [:path-a :path/compensation-samples])
+        path-b-latency (get-in pdc [:path-b :path/latency-samples])
+        path-b-comp (get-in pdc [:path-b :path/compensation-samples])
+        lengths-ok (and (= (count captured-a) (count ref-a))
+                        (= (count captured-b-unc) (count ref-b-unc))
+                        (= (count captured-b-comp) (count ref-b-comp)))
+        renders-match-offline (and lengths-ok (< diff-a tol) (< diff-b-unc tol) (< diff-b-comp tol))
+        offset-before-real (and (= offset-before-peak path-b-comp)
+                                 (= offset-before-xcorr path-b-comp)
+                                 (pos? offset-before-peak))
+        offset-after-collapsed (and (< (Math/abs offset-after-peak) 2)
+                                     (< (Math/abs offset-after-xcorr) 2))
+        pass (and renders-match-offline offset-before-real offset-after-collapsed)]
+    (println "=== kami-ongaku-plugin-host real-audio PDC proof result ===")
+    (println "compute-pdc (real kami.ongaku.plugin-host/compute-pdc, not synthetic-only):")
+    (println "  path-a: latency=" path-a-latency "compensation=" path-a-comp)
+    (println "  path-b: latency=" path-b-latency "compensation=" path-b-comp)
+    (println "captured length:" n "reference length:" (count ref-a))
+    (println "max abs diff vs independent offline reference --"
+             "pathA:" diff-a "pathB-uncompensated:" diff-b-unc
+             "pathB-compensated:" diff-b-comp "tolerance:" tol)
+    (println "--- measured sample offset (path A vs path B) on REAL captured PCM ---")
+    (println "BEFORE compensation -- peak-position:" offset-before-peak
+              "cross-correlation:" offset-before-xcorr
+              "(expected ~" PATH-A-LATENCY ")")
+    (println "AFTER  compensation -- peak-position:" offset-after-peak
+              "cross-correlation:" offset-after-xcorr
+              "(expected ~0)")
+    (println "PASS:" pass)
+    (.close browser)
+    (.close server)
+    (if pass (js/process.exit 0) (js/process.exit 1))))
+
+(defn report-error [server browser e]
+  (println "ERROR:" (.-message e))
+  (.close browser)
+  (.close server)
+  (js/process.exit 1))
+
+(defn drive-page [server browser page reference pdc]
+  (.on page "console" (fn [msg] (println "[console]" (.text msg))))
+  (.on page "pageerror" (fn [err] (println "[pageerror]" (str err))))
+  (-> (.goto page (str "http://localhost:" port "/"))
+      (.then (fn [_] (run-in-page page)))
+      (.then (fn [result] (report-and-exit server browser reference pdc result)))
+      (.catch (fn [e] (report-error server browser e)))))
+
+(defn -main []
+  (when-not (fs/existsSync (path/join site-dir "worklet-processor.js"))
+    (println "ERROR: test/e2e/page/worklet-processor.js not found.")
+    (println "Run scripts/build-e2e-bundles.sh first.")
+    (js/process.exit 1))
+  (let [pdc (offline-pdc)
+        reference (offline-reference pdc)]
+    (-> (start-server)
+        (.then
+          (fn [server]
+            (-> (.launch chromium)
+                (.then
+                  (fn [browser]
+                    (-> (.newPage browser)
+                        (.then (fn [page] (drive-page server browser page reference pdc)))))))))
+        (.catch (fn [e] (println "SETUP ERROR:" (.-message e)) (js/process.exit 1))))))
+
+(-main)

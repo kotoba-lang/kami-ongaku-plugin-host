@@ -8,4 +8,19 @@
          :exec-fn cognitect.test-runner.api/test}
   :lint {:replace-deps {clj-kondo/clj-kondo {:mvn/version "2024.11.14"}}
          :main-opts ["-m" "clj-kondo.main" "--lint" "src" "test"
-                     "--fail-level" "error"]}}}
+                     "--fail-level" "error"]}
+  ;; Real-audio PDC (plugin delay compensation) E2E
+  ;; (scripts/build-e2e-bundles.sh + test/e2e/run_e2e.cljs). Only this alias
+  ;; needs the ClojureScript compiler and (pinned-SHA, test-only)
+  ;; dependencies on kotoba-lang/audio's own audio.effects (delay-line DSP)
+  ;; and kotoba-lang/org-w3-webaudio's own w3.webaudio (the proven
+  ;; AudioContext/AudioWorkletNode binding layer) -- the E2E worklet bundle
+  ;; requires audio.effects directly so path A/B's delays are genuinely
+  ;; audio.cljc's code, not a reimplementation. Bump the SHAs (or override
+  ;; via -Sdeps at build time) when those repos advance.
+  :e2e {:extra-paths ["test/e2e/src"]
+        :extra-deps {org.clojure/clojurescript {:mvn/version "1.11.132"}
+                     io.github.kotoba-lang/audio
+                     {:git/sha "cf2f56a4b417b5e7a46100aff0a23f65d30963d6"}
+                     io.github.kotoba-lang/org-w3-webaudio
+                     {:git/sha "e554d853d6403c35b1ffe1c4adb37d2a1d557451"}}}}}
