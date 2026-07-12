@@ -1,0 +1,14 @@
+{:paths ["src"]
+ :deps {io.github.kotoba-lang/comfyui
+        {:git/url "https://github.com/kotoba-lang/comfyui"
+         :git/sha "6fa4438ba998e7d04d93f7f07c24c0b275e96cf9"
+         :deps/root "."}}
+ :aliases
+ {:test {:extra-paths ["test"]
+         :extra-deps {io.github.cognitect-labs/test-runner
+                      {:git/tag "v0.5.1" :git/sha "dfb30dd"}}
+         :main-opts ["-m" "cognitect.test-runner"]
+         :exec-fn cognitect.test-runner.api/test}
+  :lint {:replace-deps {clj-kondo/clj-kondo {:mvn/version "2024.11.14"}}
+         :main-opts ["-m" "clj-kondo.main" "--lint" "src" "test"
+                     "--fail-level" "error"]}}}
