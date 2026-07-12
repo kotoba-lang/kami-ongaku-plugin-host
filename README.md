@@ -9,10 +9,22 @@ VST3/Audio-Unit-equivalent plugin **hosting** layer for the `ongaku`
 [`audio`](https://github.com/kotoba-lang/audio) (which will eventually
 supply the real DSP `:fn` per plugin descriptor). Portable `.cljc`.
 
-This is the **hosting contract**, not DSP and not a graph executor —
-graph execution is [`comfyui`](https://github.com/kotoba-lang/comfyui)'s
-job, reused here (real `deps.edn` git dependency) rather than
-reimplemented, the same way `kami-eizo-compositor` reuses it for video
+This is the **hosting contract**, not DSP and not a full graph
+execution *engine*. The graph shape here is compatible with
+[`comfyui`](https://github.com/kotoba-lang/comfyui)'s node-registry /
+workflow contract (`class_type`/`inputs`/`outputs`), but this repo has
+**zero code dependency on comfyui**: comfyui is GPL-3.0 licensed, and a
+hard `deps.edn` dependency on it would make this repo (meant to be
+Apache-2.0, matching `kami-ongaku-notation`/`-project`/`-sampler`,
+`kami-eizo-timeline`, `org-iso-h264`) a GPL derivative. An earlier
+version of this repo did take that dependency by mistake; it's been
+removed. The generic graph algorithms (registry, topo-sort, structural
+`validate`) are now implemented natively in
+`kami.ongaku.plugin-host.graph` — same behavior, zero comfyui code. A
+consumer that has separately accepted comfyui's GPL terms can still
+wire this repo's node-type maps into a live `comfyui.node/registry`
+unchanged; only the algorithm implementation moved in-repo. This
+mirrors how `kami-eizo-compositor` handles the same situation for video
 compositing.
 
 ## Model
@@ -26,14 +38,16 @@ compositing.
   wet/dry mix. `:instance/id` matches
   `kami.ongaku.project/plugin-ref`'s `:plugin-ref/id`.
 - **`plugin-chain->workflow`** — turns an ordered plugin chain into a
-  real comfyui API-format workflow (node `"0"` = `SignalIn`, each
+  comfyui-API-format-compatible workflow (node `"0"` = `SignalIn`, each
   subsequent node wired `:in` to the previous node's output). This
-  workflow genuinely **topo-sorts and validates** via `comfyui.workflow`
-  against a registry built by `plugin-chain->registry` — see the test
-  suite. Node `:fn`s deliberately raise (`unimplemented-fn`): executing
-  real audio through the graph needs a sample-buffer host capability
-  analogous to `comfyui.std/host-fn-node`, which is out of scope here —
-  the graph's job stops at "well-formed comfyui data."
+  workflow genuinely **topo-sorts and validates** via the native
+  `kami.ongaku.plugin-host.graph` (registry/topo-sort/validate,
+  functionally equivalent to comfyui's but with zero comfyui code
+  dependency — see the module docstring for why) against a registry
+  built by `plugin-chain->registry` — see the test suite. Node `:fn`s
+  deliberately raise (`unimplemented-fn`): executing real audio through
+  the graph needs a sample-buffer host capability, out of scope here —
+  the graph's job stops at "well-formed, comfyui-compatible data."
 - **`compute-pdc`** — plugin delay compensation. Given parallel signal
   paths (each an ordered seq of instances), computes the compensation
   delay every path needs so all paths are time-aligned at the mix
@@ -48,7 +62,7 @@ compositing.
 
 ```clojure
 (require '[kami.ongaku.plugin-host :as ph]
-         '[comfyui.workflow :as workflow])
+         '[kami.ongaku.plugin-host.graph :as workflow])
 
 (def gain (ph/plugin-descriptor
            {:id "gain" :name "Gain" :vendor "kami" :category :effect

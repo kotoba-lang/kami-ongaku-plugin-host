@@ -3,8 +3,14 @@
   (music production) engine stack, ADR-2607121400 Wave 3.
 
   This is the *hosting contract*, not DSP (that's `audio`'s job) and not
-  the graph executor (that's `comfyui`'s job, reused here rather than
-  reimplemented). Think of it as the VST3/AU host layer sitting between
+  a graph execution engine. The graph *shape* here is compatible with
+  comfyui's node-registry/workflow contract (class_type/inputs/outputs),
+  but this repo has zero code dependency on comfyui (GPL-3.0) -- the
+  generic graph algorithms (registry, topo-sort, structural validate)
+  are implemented natively in kami.ongaku.plugin-host.graph. A consumer
+  that has separately accepted comfyui's GPL terms can still wire these
+  node-type maps into a live comfyui.node/registry unchanged. Think of
+  it as the VST3/AU host layer sitting between
   `kami-ongaku-project` (whose `:bus/plugin-chain` holds opaque
   `:plugin-ref/id` refs, kami.ongaku.project/plugin-ref) and `audio`
   (which will eventually supply the real `:fn` per plugin descriptor).
@@ -14,7 +20,7 @@
   backend the caller supplies) -- this repo defines the node *types* and
   the pure host-level algorithms (latency compensation, automation
   resolution), and shows them wired into a comfyui workflow shape."
-  (:require [comfyui.node :as node]))
+  (:require [kami.ongaku.plugin-host.graph :as graph]))
 
 ;; ---------------------------------------------------------------------
 ;; 1. Plugin contract: descriptor + instance
@@ -178,7 +184,7 @@
   instances only carry :instance/descriptor-id -- the registry needs
   the full descriptor to build accurate :inputs specs)."
   [descriptors]
-  (node/registry (into [signal-in-node-type] (map descriptor->node-type) descriptors)))
+  (graph/registry (into [signal-in-node-type] (map descriptor->node-type) descriptors)))
 
 ;; ---------------------------------------------------------------------
 ;; 3. Plugin delay compensation (PDC)
