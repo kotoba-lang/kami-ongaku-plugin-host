@@ -1,0 +1,12 @@
+<!doctype html>
+<html><head><meta charset="utf-8"></head>
+<body>
+<script src="/main-driver-bundle.js"></script>
+<script>
+window.runE2E = function (params) {
+  return kami.ongaku.plugin_host.e2e.main_driver.run_e2e(params)
+    .then(function (r) { console.log('runE2E resolved', JSON.stringify({length: r && r.length, sampleRate: r && r.sampleRate})); return r; })
+    .catch(function (e) { console.log('runE2E rejected', e && e.stack || String(e)); throw e; });
+};
+</script>
+</body></html>
