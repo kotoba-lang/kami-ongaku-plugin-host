@@ -39,7 +39,7 @@
 
    Run from the repo root (needs -cp pointing at this repo's own src plus a
    checkout of kotoba-lang/audio for the offline reference computation):
-     nbb -cp \"src:$AUDIO_SRC_PATH\" test/e2e/run_e2e.cljk"
+     kbb --backend sci -cp \"src:$AUDIO_SRC_PATH\" test/e2e/run_e2e.cljk"
   (:require ["playwright" :refer [chromium]]
             ["http" :as http]
             ["fs" :as fs]
