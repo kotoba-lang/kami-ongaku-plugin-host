@@ -38,7 +38,7 @@ rm -rf test/e2e/.build-main test/e2e/.build-worklet
 mkdir -p test/e2e/page
 
 echo "compiling main-thread driver bundle (kami.ongaku.plugin-host.e2e.main-driver)..."
-clojure -M:e2e -m cljs.main -d test/e2e/.build-main \
+kbb -M:e2e -m cljs.main -d test/e2e/.build-main \
   --optimizations advanced \
   --output-to test/e2e/page/main-driver-bundle.raw.js \
   -c kami.ongaku.plugin-host.e2e.main-driver
@@ -47,7 +47,7 @@ cat test/e2e/page/self-polyfill.js test/e2e/page/main-driver-bundle.raw.js \
 rm -f test/e2e/page/main-driver-bundle.raw.js
 
 echo "compiling worklet PDC-DSP bundle (kami.ongaku.plugin-host.e2e.pdc-dsp)..."
-clojure -M:e2e -m cljs.main -d test/e2e/.build-worklet \
+kbb -M:e2e -m cljs.main -d test/e2e/.build-worklet \
   --optimizations advanced \
   --output-to test/e2e/page/worklet-dsp-bundle.raw.js \
   -c kami.ongaku.plugin-host.e2e.pdc-dsp

@@ -183,7 +183,7 @@ bash scripts/build-e2e-bundles.sh          # compiles both bundles with
 npm --prefix test/e2e install              # Playwright
 npx --prefix test/e2e playwright install chromium
 AUDIO_SRC_PATH=/path/to/kotoba-lang/audio/src
-nbb -cp "src:$AUDIO_SRC_PATH" test/e2e/run_e2e.cljk
+kbb --backend sci -cp "src:$AUDIO_SRC_PATH" test/e2e/run_e2e.cljk
 ```
 
 Exits 0 and prints the PDC numbers, the offline cross-verification diffs,
@@ -198,6 +198,6 @@ build artifacts, gitignored.
 ## Test
 
 ```bash
-clojure -M:test   # 11 tests, 38 assertions
-clojure -M:lint   # 0 errors, 0 warnings
+kbb -M:test   # 11 tests, 38 assertions
+kbb -M:lint   # 0 errors, 0 warnings
 ```
