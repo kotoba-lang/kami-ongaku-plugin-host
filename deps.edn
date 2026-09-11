@@ -10,7 +10,7 @@
          :main-opts ["-m" "clj-kondo.main" "--lint" "src" "test"
                      "--fail-level" "error"]}
   ;; Real-audio PDC (plugin delay compensation) E2E
-  ;; (scripts/build-e2e-bundles.sh + test/e2e/run_e2e.cljs). Only this alias
+  ;; (scripts/build-e2e-bundles.sh + test/e2e/run_e2e.cljk). Only this alias
   ;; needs the ClojureScript compiler and (pinned-SHA, test-only)
   ;; dependencies on kotoba-lang/audio's own audio.effects (delay-line DSP)
   ;; and kotoba-lang/org-w3-webaudio's own w3.webaudio (the proven

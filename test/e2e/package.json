@@ -1,7 +1,7 @@
 {
   "name": "kami-ongaku-plugin-host-e2e",
   "private": true,
-  "description": "Playwright dependency for the real-browser AudioWorklet PDC (plugin delay compensation) proof harness (test/e2e/run_e2e.cljs). Not published.",
+  "description": "Playwright dependency for the real-browser AudioWorklet PDC (plugin delay compensation) proof harness (test/e2e/run_e2e.cljk). Not published.",
   "devDependencies": {
     "playwright": "^1.48.0"
   }

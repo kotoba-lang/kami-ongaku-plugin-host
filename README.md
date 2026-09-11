@@ -91,7 +91,7 @@ compositing.
 ## Real-audio PDC proof (`test/e2e/`)
 
 **This is a test/proof harness, not a production render pipeline.** Every
-existing test in `test/kami/ongaku/plugin_host_test.cljc` (including
+existing test in `test/kami/ongaku/plugin_host_test.cljk` (including
 `compute-pdc`'s own tests) checks the PDC math against hand-picked
 synthetic latency integers — never real audio. This E2E closes that
 specific gap: it proves `compute-pdc`'s compensation number, fed back
@@ -121,7 +121,7 @@ function's own docstring): 200 samples for path A always, and either 0
 (uncompensated) or `compute-pdc`'s own computed 200 (compensated) for path
 B.
 
-`test/e2e/src/kami/ongaku/plugin_host/e2e/pdc_dsp.cljs` (worklet-side
+`test/e2e/src/kami/ongaku/plugin_host/e2e/pdc_dsp.cljk` (worklet-side
 bundle) requires this repo's own `kami.ongaku.plugin-host` (`compute-pdc`,
 `plugin-descriptor`, `plugin-instance`) and `kotoba-lang/audio`'s own
 `audio.effects` directly — not reimplementations — and exports a
@@ -132,13 +132,13 @@ cljs isn't a solved idiom, same reasoning org-w3-webaudio's tail gives)
 calls once in its constructor, streaming all three rendered channels
 (pathA / pathB-uncompensated / pathB-compensated) out through the
 realtime `process()` quantum callback. A main-thread bundle
-(`test/e2e/src/kami/ongaku/plugin_host/e2e/main_driver.cljs`) uses
+(`test/e2e/src/kami/ongaku/plugin_host/e2e/main_driver.cljk`) uses
 `org-w3-webaudio`'s own binding layer (`new-offline-audio-context!` with 3
 channels, `add-worklet-module!`, `create-worklet-node!`, `connect!`,
 `start-rendering!`) to load the worklet module into a real headless
 Chromium and capture the actual rendered 3-channel PCM.
 
-`test/e2e/run_e2e.cljs` (nbb) independently recomputes the identical
+`test/e2e/run_e2e.cljk` (nbb) independently recomputes the identical
 scenario (same `compute-pdc` + `audio.effects/delay-line` source, no
 browser involved) as ground truth, diffs it against the browser-captured
 PCM, and then — the actual proof — measures the real sample offset
@@ -183,7 +183,7 @@ bash scripts/build-e2e-bundles.sh          # compiles both bundles with
 npm --prefix test/e2e install              # Playwright
 npx --prefix test/e2e playwright install chromium
 AUDIO_SRC_PATH=/path/to/kotoba-lang/audio/src
-nbb -cp "src:$AUDIO_SRC_PATH" test/e2e/run_e2e.cljs
+nbb -cp "src:$AUDIO_SRC_PATH" test/e2e/run_e2e.cljk
 ```
 
 Exits 0 and prints the PDC numbers, the offline cross-verification diffs,

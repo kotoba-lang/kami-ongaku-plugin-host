@@ -2,7 +2,7 @@
   "Real-audio proof that kami-ongaku-plugin-host's PDC (plugin delay
    compensation, kami.ongaku.plugin-host/compute-pdc) does genuine,
    measurable work -- not just a formula on synthetic numbers (every
-   existing test in test/kami/ongaku/plugin_host_test.cljc checks compute-pdc
+   existing test in test/kami/ongaku/plugin_host_test.cljk checks compute-pdc
    against hand-picked latency integers only, never real audio).
 
    Scenario: two parallel signal paths both receive the same impulse
@@ -39,7 +39,7 @@
 
    Run from the repo root (needs -cp pointing at this repo's own src plus a
    checkout of kotoba-lang/audio for the offline reference computation):
-     nbb -cp \"src:$AUDIO_SRC_PATH\" test/e2e/run_e2e.cljs"
+     nbb -cp \"src:$AUDIO_SRC_PATH\" test/e2e/run_e2e.cljk"
   (:require ["playwright" :refer [chromium]]
             ["http" :as http]
             ["fs" :as fs]
