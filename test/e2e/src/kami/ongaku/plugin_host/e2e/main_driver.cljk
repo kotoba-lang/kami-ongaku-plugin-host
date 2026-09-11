@@ -6,7 +6,7 @@
    (test/e2e/page/worklet-processor.js) via audioWorklet.addModule, create
    the AudioWorkletNode, render, and hand back the rendered PCM (channel 0 =
    pathA, channel 1 = pathBUncompensated, channel 2 = pathBCompensated) for
-   comparison (by test/e2e/run_e2e.cljs) against an independent offline
+   comparison (by test/e2e/run_e2e.cljk) against an independent offline
    recomputation of the same scenario.
 
    Compiled the same way as pdc_dsp.cljs (:optimizations advanced,

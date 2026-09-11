@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Compiles the two bundles needed for the kami-ongaku-plugin-host real-audio
-# PDC (plugin delay compensation) E2E (test/e2e/run_e2e.cljs):
+# PDC (plugin delay compensation) E2E (test/e2e/run_e2e.cljk):
 #
-#   1. test/e2e/src/kami/ongaku/plugin_host/e2e/main_driver.cljs -> main-thread
+#   1. test/e2e/src/kami/ongaku/plugin_host/e2e/main_driver.cljk -> main-thread
 #      bundle (page/main-driver-bundle.js). Uses org-w3-webaudio's own
 #      src/w3/webaudio.cljs binding layer to drive
 #      OfflineAudioContext/AudioWorkletNode from the page.
-#   2. test/e2e/src/kami/ongaku/plugin_host/e2e/pdc_dsp.cljs -> worklet-side
+#   2. test/e2e/src/kami/ongaku/plugin_host/e2e/pdc_dsp.cljk -> worklet-side
 #      bundle (page/worklet-processor.js). Requires this repo's own
 #      kami.ongaku.plugin-host (compute-pdc) and kotoba-lang/audio's own
 #      audio.effects (delay-line) directly, and exports a render-scenario
